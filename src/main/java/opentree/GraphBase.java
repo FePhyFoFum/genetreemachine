@@ -44,7 +44,7 @@ import org.neo4j.kernel.EmbeddedGraphDatabase;
  */
 
 public abstract class GraphBase {
-	GraphDatabaseAgent graphDb;
+	protected GraphDatabaseAgent graphDb;
 	
 	protected static Index<Node> graphNodeIndex;
 	protected static Index<Node> synNodeIndex;
