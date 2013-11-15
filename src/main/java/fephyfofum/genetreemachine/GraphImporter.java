@@ -62,7 +62,6 @@ public class GraphImporter extends GraphBase {
 	
 	private ArrayList<Node> updatedNodes;
 	private HashSet<Node> updatedSuperLICAs;
-	private MessageLogger logger;
 	
 	private ArrayList<JadeNode> inputJadeTreeLeaves; // just the leaves of the input tree
 	// TODO making a Set<Long> or sorted ArrayList<Long> for the ids would make the look ups faster. See comment in testIsMRCA
@@ -124,7 +123,7 @@ public class GraphImporter extends GraphBase {
 	 *		this we could just randomly choose one of the edges that is connected
 	 *		to the root node that is in the index
 	 */
-	public void addSetTreeToGraph(String focalgroup, String sourceName, boolean allTreesHaveAllTaxa, MessageLogger msgLogger) throws Exception {
+	public void addSetTreeToGraph(String focalgroup, String sourceName, boolean allTreesHaveAllTaxa) {
 
 		this.runTestOnly = false;
 		this.allTreesHaveAllTaxa = allTreesHaveAllTaxa;
@@ -133,13 +132,25 @@ public class GraphImporter extends GraphBase {
 			System.out.println("\tusing complete mapping technique");
 		else
 			System.out.println("\tusing bipartition technique");
-		this.logger = msgLogger;
 		this.sourceName = sourceName;
 
 		// first add the mappings to the exact taxon nodes
-		matchTaxaUsingNames(focalgroup);
+		try {
+			matchTaxaUsingNames(focalgroup);
+		} catch (MultipleHitsException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (TaxonNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 		
-		loadTree();
+		try {
+			loadTree();
+		} catch (TreeIngestException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 	
 	/**
@@ -189,7 +200,6 @@ public class GraphImporter extends GraphBase {
 				if (numh == 1) {
 					matchedGraphNode = hits.getSingle();
 				} else if (numh > 1) {
-					logger.indentMessageIntStr(2, "multiple graphNamedNodes hits", "number of hits", numh, "name", processedname);
 					int shortest = 1000; // this is shortest to the focal, could reverse this
 					Node shortn = null;
 					for (Node tnode : hits) {
@@ -203,9 +213,7 @@ public class GraphImporter extends GraphBase {
 								shortn = tnode;
 							}
 	//						System.out.println(shortest + " " + tpath.length());
-						} else {
-							logger.indentMessageStr(3, "graphNamedNodes hit not within focalgroup", "focalgroup", focalgroup);
-						}
+						} 
 					}
 					if (shortn == null) {
 						// if there are multiple hits outside the focalgroup, and none inside the focalgroup
@@ -572,7 +580,6 @@ public class GraphImporter extends GraphBase {
 		//		_LOG.trace("children: "+inode.getChildCount());
 
 		if (inode.getChildCount() > 0) {
-			logger.indentMessageStr(2, "subtree", "newick", inode.getNewick(false));
 			ArrayList<JadeNode> nds = inode.getTips();
 			ArrayList<Node> hit_nodes = new ArrayList<Node>();
 			ArrayList<Node> hit_nodes_search = new ArrayList<Node> ();
@@ -608,14 +615,6 @@ public class GraphImporter extends GraphBase {
 				ancestors = LicaUtil.getAllLICAt4j(hit_nodes_search, childndids, outndids);
 			} else {
 				ancestors = LicaUtil.getBipart4j(inode,hit_nodes,hit_nodes_search, hit_nodes_small_search,childndids, outndids,graphDb);
-			}
-			for (Node tnd : ancestors) {
-				if (tnd.hasProperty("name")) {
-					logger.indentMessageStrStr(3, "matched anc", "node", tnd.toString(), "name", (String)tnd.getProperty("name"));
-					logger.indentMessageStrStr(3, "matched anc info", "tax_uid", (String)tnd.getProperty("tax_uid"), "name", (String)tnd.getProperty("name"));
-				} else {
-					logger.indentMessageStr(3, "matched anc", "node", tnd.toString());
-				}
 			}
 		}
 	}
@@ -822,15 +821,7 @@ public class GraphImporter extends GraphBase {
 			System.out.println("tree read");
 //			setTree(inputTree,trees);
 			setTree(inputTree);
-			try {
-				addSetTreeToGraph("life",source,false, null);
-			} catch (TaxonNotFoundException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (TreeIngestException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
+			addSetTreeToGraph("life",source,false);
 		}
 	}
 		
