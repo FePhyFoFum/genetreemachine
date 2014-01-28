@@ -49,6 +49,7 @@ public abstract class GraphBase {
 	protected static Index<Node> graphNodeIndex;
 	protected static Index<Node> synNodeIndex;
 	protected static Index<Relationship> sourceRelIndex;
+	protected static Index<Relationship> dupRelIndex;
 	protected static Index<Node> sourceRootIndex;
 	protected static Index<Node> sourceMetaIndex;
 	protected static Index<Node> graphTaxUIDNodeIndex; //tax_uid is the key, the uid from the taxonomy points to this node
@@ -280,6 +281,24 @@ public abstract class GraphBase {
 			relsToRemove.close();
 		}
 
+		// first remove the relationships
+		try {
+			relsToRemove = dupRelIndex.get("source", source);
+			tx = graphDb.beginTx();
+			try {
+				for (Relationship itrel : relsToRemove) {
+					itrel.delete();
+					dupRelIndex.remove(itrel, "source", source);
+				}
+				tx.success();
+			} finally {
+				tx.finish();
+			}
+		} finally {
+			relsToRemove.close();
+		}
+
+		
 		// then remove the root nodes
 		try {
 			nodesToRemove = sourceRootIndex.get("rootnode", source);
@@ -323,6 +342,7 @@ public abstract class GraphBase {
         graphNodeIndex = graphDb.getNodeIndex("graphNamedNodes");
 		synNodeIndex = graphDb.getNodeIndex("graphNamedNodesSyns");
         sourceRelIndex = graphDb.getRelIndex("sourceRels");
+        dupRelIndex = graphDb.getRelIndex("dupRels");
         sourceRootIndex = graphDb.getNodeIndex("sourceRootNodes");
         sourceMetaIndex = graphDb.getNodeIndex("sourceMetaNodes");
     	graphTaxUIDNodeIndex = graphDb.getNodeIndex("graphTaxUIDNodes");

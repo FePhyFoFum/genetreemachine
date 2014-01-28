@@ -188,9 +188,16 @@ public class GraphImporter extends GraphBase {
 		// gather information for each leaf in the input tree prior to import
 		// TODO: this could be modified to account for internal node name mapping
 		for (JadeNode curLeaf : inputJadeTreeLeaves) {
-			
 			String processedname = curLeaf.getName();
-
+			curLeaf.assocObject("original_name", processedname);
+			//label ids
+			if(processedname.contains("@")){
+				String [] spls = processedname.split("@");
+				System.out.println("changing the name from "+processedname+" to "+spls[0]+" and saving as original_name");
+				processedname = spls[0];
+				curLeaf.setName(processedname);
+			}
+			
 			// find all the tip taxa and with doubles pick the taxon closest to the focal group
 			Node matchedGraphNode = null;
 			IndexHits<Node> hits = null;
@@ -274,23 +281,11 @@ public class GraphImporter extends GraphBase {
 	 * @throws TreeIngestException
 	 */
 	private void loadTree() throws TreeIngestException {
-
 		tx = graphDb.beginTx();
-//		try {
-		if(runTestOnly == false) { // actually load the tree into the db
-			postOrderAddProcessedTreeToGraph(inputTree.getRoot());
-
-		} else { // just test the loading process
-			postOrderAddProcessedTreeToGraphNoAdd(inputTree.getRoot());
-		}
-
+		postOrderAddProcessedTreeToGraph(inputTree.getRoot());
 		tx.success();
-
-//		} finally {
-
 		System.out.println("Committing nodes: " + nNodesToCommit);
 		tx.finish();
-//		}
 	}
 	
 	/**
@@ -422,6 +417,7 @@ public class GraphImporter extends GraphBase {
 //			System.out.println("mrca descendants for input node \'" + curJadeNode.getName() + "\' include: " + Arrays.toString(nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.toArray()));
 			
 			nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.sort();
+			nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.clear();
 			curJadeNode.assocObject("exclusive_mrca", nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.toArray()); // moved up from below
 
 			// Get the union of all node ids from the mrca properties (i.e. descendant node ids) for every graph node mapped as a lica to every jade node
@@ -430,11 +426,17 @@ public class GraphImporter extends GraphBase {
 			for (JadeNode childNode : curJadeNode.getChildren()) {
 
 				HashSet<Node> childNodeLicaMappings = (HashSet<Node>) childNode.getObject("dbnodes"); // the graph nodes for the mrca mappings for this child node
-
+				TLongHashSet thash = new TLongHashSet();
 				for (Node licaNode : childNodeLicaMappings) {
 					licaDescendantIdsForCurrentJadeNode_Hash.addAll((long[]) licaNode.getProperty("mrca"));
+					thash.addAll((long[]) licaNode.getProperty("mrca"));
 				}
+				//need to do nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode
+				//differently if the descendants are of the duplications
+				nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.addAll(thash);
 			}
+			nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.sort();
+
 			// convert hashset to arraylist so we can use it in the lica calculations
 			TLongArrayList licaDescendantIdsForCurrentJadeNode = new TLongArrayList(licaDescendantIdsForCurrentJadeNode_Hash);
 			licaDescendantIdsForCurrentJadeNode.sort();
@@ -460,165 +462,129 @@ public class GraphImporter extends GraphBase {
 			for (JadeNode d : curJadeNode.getDescendantLeaves()) {
 				names.add(d.getName());
 			}
-			//System.out.println("Looking for LICA Nodes of " + Arrays.toString(names.toArray()));
+			/*
+			 * Searching for the duplications here. No lica will be created here
+			 * The basic test is just that the 
+			 */
+			HashSet duptest = new HashSet<String>();
+			duptest.addAll(names);
 			
-			// find all the compatible lica mappings for this jade node to existing graph nodes
-			HashSet<Node> licaMatches = null;
-			if(allTreesHaveAllTaxa == true) { // use a simpler calculation if we can assume that all trees have completely overlapping taxon sampling (including taxonomy)
-				licaMatches = LicaUtil.getAllLICAt4j(graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						licaDescendantIdsForCurrentJadeNode,
-						licaOutgroupDescendantIdsForCurrentJadeNode);
-
-			} else { // when taxon sets don't completely overlap, the lica calculator needs more info
-				licaMatches = LicaUtil.getBipart4j(curJadeNode,graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						licaDescendantIdsForCurrentJadeNode,
-						licaOutgroupDescendantIdsForCurrentJadeNode, graphDb);
-			}
+			System.out.println("Looking for LICA Nodes of " + Arrays.toString(names.toArray()));
+			System.out.println("1 "+graphNodesMappedToDescendantLeavesOfThisJadeNode);
+			System.out.println("2 "+graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode);
+			System.out.println("3 "+nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode);
+			System.out.println("4 "+licaDescendantIdsForCurrentJadeNode);
+			System.out.println("5 "+licaOutgroupDescendantIdsForCurrentJadeNode);
 			
-			//			_LOG.trace("ancestor "+ancestor);
-			// _LOG.trace(ancestor.getProperty("name"));
-
-			if (licaMatches.size() > 0) { // if we found any compatible lica mappings to nodes already in the graph
-
-				// remember all the lica mappings
-				curJadeNode.assocObject("dbnodes", licaMatches);
-
-				// remember the ids of the graph nodes mapped to all the jade tree leaves descended from this jade node
-//				long[] nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode = new long[graphNodesMappedToDescendantLeavesOfThisJadeNode.size()];
-//				for (int i = 0; i < graphNodesMappedToDescendantLeavesOfThisJadeNode.size(); i++) {
-//					nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode[i] = graphNodesMappedToDescendantLeavesOfThisJadeNode.get(i).getId();
-//				}
-//				Arrays.sort(nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode);
-//				curJadeNode.assocObject("exclusive_mrca", nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode);
-
-				
-			} else { // if there were no compatible lica mappings found for this jade node, then we need to make a new one
-
-				// === step 1. create an new node in the graph
-				
-				Node newLicaNode = graphDb.createNode();
-				//System.out.println("\t\tnewnode: "+dbnode);
-
-				// === step 2. store the mrca information in the graph node properties
-
-				// the dbnodes array contains compatible lica mappings. there is only one here (the node we are making)
-				HashSet<Node> nar = new HashSet<Node>();
-				nar.add(newLicaNode);
-				curJadeNode.assocObject("dbnodes", nar);
-				newLicaNode.setProperty("mrca", licaDescendantIdsForCurrentJadeNode.toArray());
-				//System.out.println("\t\tmrca: "+childndids);
-
-				// set outmrcas
-				newLicaNode.setProperty("outmrca", licaOutgroupDescendantIdsForCurrentJadeNode.toArray());
-				//System.out.println("\t\toutmrca: "+outndids);
-
-				// this is duplicated above
-				// set exclusive relationships
-//				long[] rete = new long[graphNodesMappedToDescendantLeavesOfThisJadeNode.size()];
-//				for (int j = 0; j < graphNodesMappedToDescendantLeavesOfThisJadeNode.size(); j++) {
-//					rete[j] = graphNodesMappedToDescendantLeavesOfThisJadeNode.get(j).getId();
-//				}
-//				Arrays.sort(rete);
-//				curJadeNode.assocObject("exclusive_mrca", rete);
-				
-				// === step 3. assoc the jade node with the new graph node
-
-				// first get the super licas, which is what would be the licas if we didn't have the other taxa in the tree
-				// this will be used to connect the new nodes to their licas for easier traversals
-				HashSet<Node> superlicas = LicaUtil.getSuperLICAt4j(graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
-						licaDescendantIdsForCurrentJadeNode);
-				//System.out.println("\t\tsuperlica: "+superlica);
-				
-				Iterator<Node> itrsl = superlicas.iterator();
-				while (itrsl.hasNext()) {
-					Node itrnext = itrsl.next();
-					newLicaNode.createRelationshipTo(itrnext, RelType.MRCACHILDOF);
-					updatedSuperLICAs.add(itrnext);
+			if(nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode.size() 
+					> licaDescendantIdsForCurrentJadeNode.size()){
+				System.out.println("duplication found");
+				HashSet<Node> licaMatches = new HashSet<Node>();
+				for (JadeNode childNode : curJadeNode.getChildren()) {
+					HashSet<Node> childNodeLicaMappings = (HashSet<Node>) childNode.getObject("dbnodes"); // the graph nodes for the mrca mappings for this child node
+					System.out.println("childnodelicaMappings "+childNodeLicaMappings);
+					for (Node licaNode : childNodeLicaMappings) {
+						Relationship rel = licaNode.createRelationshipTo(licaNode, GTMRelTypes.DUPLICATIONFROM);
+						rel.setProperty("source", sourceName);
+						dupRelIndex.add(rel, "source", sourceName);
+						licaMatches.add(licaNode);
+					}
 				}
-				tx.success();
-				
-				// add new nodes so they can be used for updating after tree ingest
-				updatedNodes.add(newLicaNode);
-			}
+				curJadeNode.assocObject("dbnodes", licaMatches);
+			}else{
 
-//			System.out.println("Mapping " + Arrays.toString(names.toArray()) + " to " + Arrays.toString(((HashSet<Node>) curJadeNode.getObject("dbnodes")).toArray()));
-			
-			// now related nodes are prepared and we have the information we need to make relationships
-			addProcessedNodeRelationships(curJadeNode);
+				// find all the compatible lica mappings for this jade node to existing graph nodes
+				HashSet<Node> licaMatches = null;
+				if(allTreesHaveAllTaxa == true) { // use a simpler calculation if we can assume that all trees have completely overlapping taxon sampling (including taxonomy)
+					licaMatches = LicaUtil.getAllLICAt4j(graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							licaDescendantIdsForCurrentJadeNode,
+							licaOutgroupDescendantIdsForCurrentJadeNode);
+
+				} else { // when taxon sets don't completely overlap, the lica calculator needs more info
+					licaMatches = LicaUtil.getBipart4j(curJadeNode,graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							licaDescendantIdsForCurrentJadeNode,
+							licaOutgroupDescendantIdsForCurrentJadeNode, graphDb);
+				}
+
+				//			_LOG.trace("ancestor "+ancestor);
+				// _LOG.trace(ancestor.getProperty("name"));
+
+				if (licaMatches.size() > 0) { // if we found any compatible lica mappings to nodes already in the graph
+
+					// remember all the lica mappings
+					curJadeNode.assocObject("dbnodes", licaMatches);
+
+					// remember the ids of the graph nodes mapped to all the jade tree leaves descended from this jade node
+					//				long[] nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode = new long[graphNodesMappedToDescendantLeavesOfThisJadeNode.size()];
+					//				for (int i = 0; i < graphNodesMappedToDescendantLeavesOfThisJadeNode.size(); i++) {
+					//					nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode[i] = graphNodesMappedToDescendantLeavesOfThisJadeNode.get(i).getId();
+					//				}
+					//				Arrays.sort(nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode);
+					//				curJadeNode.assocObject("exclusive_mrca", nodeIdsFor_graphNodesMappedToDescendantLeavesOfThisJadeNode);
+
+
+				} else { // if there were no compatible lica mappings found for this jade node, then we need to make a new one
+
+					// === step 1. create an new node in the graph
+
+					Node newLicaNode = graphDb.createNode();
+					//System.out.println("\t\tnewnode: "+dbnode);
+
+					// === step 2. store the mrca information in the graph node properties
+
+					// the dbnodes array contains compatible lica mappings. there is only one here (the node we are making)
+					HashSet<Node> nar = new HashSet<Node>();
+					nar.add(newLicaNode);
+					curJadeNode.assocObject("dbnodes", nar);
+					newLicaNode.setProperty("mrca", licaDescendantIdsForCurrentJadeNode.toArray());
+					//System.out.println("\t\tmrca: "+childndids);
+
+					// set outmrcas
+					newLicaNode.setProperty("outmrca", licaOutgroupDescendantIdsForCurrentJadeNode.toArray());
+					//System.out.println("\t\toutmrca: "+outndids);
+
+					// this is duplicated above
+					// set exclusive relationships
+					//				long[] rete = new long[graphNodesMappedToDescendantLeavesOfThisJadeNode.size()];
+					//				for (int j = 0; j < graphNodesMappedToDescendantLeavesOfThisJadeNode.size(); j++) {
+					//					rete[j] = graphNodesMappedToDescendantLeavesOfThisJadeNode.get(j).getId();
+					//				}
+					//				Arrays.sort(rete);
+					//				curJadeNode.assocObject("exclusive_mrca", rete);
+
+					// === step 3. assoc the jade node with the new graph node
+
+					// first get the super licas, which is what would be the licas if we didn't have the other taxa in the tree
+					// this will be used to connect the new nodes to their licas for easier traversals
+					HashSet<Node> superlicas = LicaUtil.getSuperLICAt4j(graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							nodeIdsFor_graphNodesDescendedFrom_graphNodesMappedToDescendantLeavesOfThisJadeNode,
+							licaDescendantIdsForCurrentJadeNode);
+					//System.out.println("\t\tsuperlica: "+superlica);
+
+					Iterator<Node> itrsl = superlicas.iterator();
+					while (itrsl.hasNext()) {
+						Node itrnext = itrsl.next();
+						newLicaNode.createRelationshipTo(itrnext, RelType.MRCACHILDOF);
+						updatedSuperLICAs.add(itrnext);
+					}
+					tx.success();
+
+					// add new nodes so they can be used for updating after tree ingest
+					updatedNodes.add(newLicaNode);
+				}
+
+				//			System.out.println("Mapping " + Arrays.toString(names.toArray()) + " to " + Arrays.toString(((HashSet<Node>) curJadeNode.getObject("dbnodes")).toArray()));
+
+				// now related nodes are prepared and we have the information we need to make relationships
+				addProcessedNodeRelationships(curJadeNode);
+			}
 		}
 		//System.out.println("done with node " + Arrays.toString(namesList.toArray()));
 	}
 
-	/**
-	 * Finish ingest a tree into the GoL. This is called after the names in the tree
-	 *	have been mapped to IDs for the nodes in the Taxonomy graph. The mappings are stored
-	 *	as an object associated with the root node, as are the list of node ID's. 
-	 *
-	 * This will update the class member updatedNodes so they can be used for updating 
-	 * existing relationships.
-	 *
-	 * @param sourcename the name to be registered as the "source" property for
-	 *		every edge in this tree.
-	 * @param test don't add the tree to the database, just run through as though you would add it
-	 * @todo note that if a TreeIngestException the database will not have been reverted
-	 *		back to its original state. At minimum at least some relationships
-	 *		will have been created. It is also possible that some nodes will have
-	 *		been created. We should probably add code to assure that we won't get
-	 *		a TreeIngestException, or rollback the db modifications.
-	 *		
-	 */
-//	@SuppressWarnings("unchecked")
-	private void postOrderAddProcessedTreeToGraphNoAdd(JadeNode inode) throws TreeIngestException {
-	// postorder traversal via recursion
-		for (int i = 0; i < inode.getChildCount(); i++) {
-			postOrderAddProcessedTreeToGraphNoAdd(inode.getChild(i));
-		}
-		//		_LOG.trace("children: "+inode.getChildCount());
-
-		if (inode.getChildCount() > 0) {
-			ArrayList<JadeNode> nds = inode.getTips();
-			ArrayList<Node> hit_nodes = new ArrayList<Node>();
-			ArrayList<Node> hit_nodes_search = new ArrayList<Node> ();
-			TLongArrayList hit_nodes_small_search = new TLongArrayList ();
-
-			// store the hits for each of the nodes in the tips
-			for (int j = 0; j < nds.size(); j++) {
-				hit_nodes.add(graphDb.getNodeById(inputJadeTreeLeafToMatchedGraphNodeIdMap.get(nds.get(j))));
-				ArrayList<Long> tlist = jadeNodeToDescendantGraphNodeIdsMap.get(nds.get(j));
-				hit_nodes_small_search.addAll(tlist);
-				for (int k = 0; k < tlist.size(); k++) {
-					hit_nodes_search.add(graphDb.getNodeById(tlist.get(k)));
-				}
-			}
-			hit_nodes_small_search.sort();
-			// because we don't associate nodes from the database to this, we have to search based on just the short names			
-			TLongArrayList childndids = new TLongArrayList(hit_nodes_small_search);
-			TLongArrayList outndids = new TLongArrayList();
-
-			// add all the children of the mapped nodes to the outgroup as well
-			for (int i = 0; i < graphNodeIdsForInputLeaves.size(); i++) {
-				if (childndids.contains(graphNodeIdsForInputLeaves.getQuick(i)) == false) {
-					outndids.addAll((long[])graphDb.getNodeById(graphNodeIdsForInputLeaves.get(i)).getProperty("mrca"));
-				}
-			}
-			childndids.sort();
-			outndids.removeAll(childndids);
-			outndids.sort();
-
-			HashSet<Node> ancestors = null;
-			if (allTreesHaveAllTaxa) {
-				//we can use a simpler calculation if we can assume that the 'trees that come in are complete in their taxa
-				ancestors = LicaUtil.getAllLICAt4j(hit_nodes_search, childndids, outndids);
-			} else {
-				ancestors = LicaUtil.getBipart4j(inode,hit_nodes,hit_nodes_search, hit_nodes_small_search,childndids, outndids,graphDb);
-			}
-		}
-	}
-	
 	
 	/**
 	 * This should be called from within postOrderaddProcessedTreeToGraph to create relationships between nodes that have already

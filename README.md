@@ -29,6 +29,4 @@ To see the help message run:
 
 	java -jar target/genetreemachine-0.0.1-SNAPSHOT-jar-with-dependencies.jar
 
-See below for an example of adding information to a database. More examples are being added to the treemachine wiki https://github.com/OpenTreeOfLife/treemachine/wiki. 
-
 ### Quickstart

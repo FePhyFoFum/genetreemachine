@@ -59,7 +59,11 @@ public class MainRunner {
 		HashSet<String> names = new HashSet<String>();
 		for (int i = 0; i < jt.size(); i++) {
 			for (int j = 0; j < jt.get(i).getExternalNodeCount(); j++) {
-				names.add(jt.get(i).getExternalNode(j).getName());
+				String processedname = jt.get(i).getExternalNode(j).getName();
+				if(processedname.contains("@")){
+					processedname = processedname.split("@")[0];
+				}
+				names.add(processedname);
 			}
 		}
 		PrintWriter outFile;
@@ -145,8 +149,14 @@ public class MainRunner {
 
 	}
 	
+	private static void printHelp(){
+		System.out.println("loadTrees filename (taxacompletelyoverlap)T|F graphdbfolder");
+	}
+	
 	public static void main(String [] args){
 		if(args[0].equals("loadTrees") && args.length == 4)
 			MainRunner.loadTrees(args);
+		else
+			MainRunner.printHelp();
 	}
 }

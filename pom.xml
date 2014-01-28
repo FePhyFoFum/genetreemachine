@@ -71,7 +71,7 @@
             <configuration>
                 <archive>
                     <manifest>
-                        <mainClass>opentree.MainRunner</mainClass>
+                        <mainClass>fephyfofum.genetreemachine.MainRunner</mainClass>
                     </manifest>
                 </archive>
                 <descriptorRefs>
