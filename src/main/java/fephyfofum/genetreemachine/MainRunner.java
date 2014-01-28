@@ -154,9 +154,13 @@ public class MainRunner {
 	}
 	
 	public static void main(String [] args){
-		if(args[0].equals("loadTrees") && args.length == 4)
-			MainRunner.loadTrees(args);
-		else
+		if (args.length == 0 ){
 			MainRunner.printHelp();
+		}
+		else if(args[0].equals("loadTrees") && args.length == 4){
+			MainRunner.loadTrees(args);
+	    }else{
+			MainRunner.printHelp();
+        }
 	}
 }
